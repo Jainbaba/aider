@@ -272,17 +272,52 @@ class RepoMap:
         if not query_scm.exists():
             return
         query_scm = query_scm.read_text()
+        
+        def _generate_dot(node, dot_list, parent_id=None):
+            node_id = len(dot_list)
+            dot_list.append(f'  {node_id} [type="{node.type}"] [value="{str(node.text)}"];')
+            
+            if parent_id is not None:
+                dot_list.append(f'  {parent_id} -> {node_id};')
+            
+            for child in node.children:
+                _generate_dot(child, dot_list, node_id)
 
         code = self.io.read_text(fname)
         if not code:
             return
         tree = parser.parse(bytes(code, "utf-8"))
-
+        print(rel_fname)
+        if rel_fname == 'core/admin/mailu/api/v1/relay.py':
+            dot_list = ['digraph Tree {']
+            _generate_dot(tree.root_node, dot_list)
+            dot_list.append('}')
+            
+            with open("parse_tree.dot", "w") as f:
+                f.write("\n".join(dot_list))
+                
+            print("DOT graph saved to parse_tree.dot")
+        
+        
         # Run the tags queries
         query = language.query(query_scm)
         captures = query.captures(tree.root_node)
-
+        
+        os.makedirs("captures", exist_ok=True)
         captures = list(captures)
+        try:
+            base_name, ext = os.path.splitext(os.path.basename(rel_fname))
+            modified_name = f"{base_name}_{ext.lstrip('.')}"
+            output_file = f"captures/{modified_name}_output.txt"
+            with open(output_file, "w") as file:
+                file.write(f"File Location: {rel_fname}\n")
+                for item in captures:
+                    file.write(f"{item}\n")
+        except Exception as e:
+            print(f'Issue {e}')
+        finally:
+            cap_dir_path = os.path.abspath("captures")
+            print(f"Files Completed. captures saved in directory: {cap_dir_path}")
 
         saw = set()
         for node, tag in captures:
@@ -321,6 +356,20 @@ class RepoMap:
             return
 
         tokens = list(lexer.get_tokens(code))
+        os.makedirs("tokens", exist_ok=True)
+        try:
+            base_name, ext = os.path.splitext(os.path.basename(rel_fname))
+            modified_name = f"{base_name}_{ext.lstrip('.')}"
+            output_file = f"tokens/{modified_name}_output.txt"
+            with open(output_file, "w") as file:
+                file.write(f"File Location: {rel_fname}\n")
+                for item in tokens:
+                    file.write(f"{item}\n")
+        except Exception as e:
+            print(f'Issue {e}')
+        finally:
+            token_dir_path = os.path.abspath("tokens")
+            print(f"Files Completed. Tokens saved in directory: {token_dir_path}")
         tokens = [token[1] for token in tokens if token[0] in Token.Name]
 
         for token in tokens:
