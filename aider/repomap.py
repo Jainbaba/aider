@@ -287,7 +287,6 @@ class RepoMap:
         if not code:
             return
         tree = parser.parse(bytes(code, "utf-8"))
-        print(rel_fname)
         if rel_fname == 'core/admin/mailu/api/v1/relay.py':
             dot_list = ['digraph Tree {']
             _generate_dot(tree.root_node, dot_list)
@@ -311,8 +310,9 @@ class RepoMap:
             output_file = f"captures/{modified_name}_output.txt"
             with open(output_file, "w") as file:
                 file.write(f"File Location: {rel_fname}\n")
-                for item in captures:
-                    file.write(f"{item}\n")
+                for node, tag in captures:
+                    name = node.text.decode("utf-8")
+                    file.write(f"node:{node} node.name:{name} tag:{tag}\n")
         except Exception as e:
             print(f'Issue {e}')
         finally:
@@ -325,6 +325,8 @@ class RepoMap:
                 kind = "def"
             elif tag.startswith("name.reference."):
                 kind = "ref"
+            elif tag.startswith("name.decorator.definition."):
+                kind = "dec"
             else:
                 continue
 
@@ -340,6 +342,8 @@ class RepoMap:
 
             yield result
 
+        if "dec" not in saw:
+            return
         if "ref" in saw:
             return
         if "def" not in saw:
@@ -389,6 +393,7 @@ class RepoMap:
         defines = defaultdict(set)
         references = defaultdict(list)
         definitions = defaultdict(set)
+        decorators = defaultdict(list)
 
         personalization = dict()
 
@@ -458,6 +463,9 @@ class RepoMap:
 
                 elif tag.kind == "ref":
                     references[tag.name].append(rel_fname)
+                
+                elif tag.kind == "dec":
+                    decorators[tag.name].append(rel_fname)
 
         ##
         # dump(defines)
@@ -466,8 +474,11 @@ class RepoMap:
 
         if not references:
             references = dict((k, list(v)) for k, v in defines.items())
-
+            
+        priority_defines = set(defines.keys()).intersection(set(decorators.keys()))
         idents = set(defines.keys()).intersection(set(references.keys()))
+        
+        idents = list(priority_defines) + list(idents - priority_defines)
 
         G = nx.MultiDiGraph()
 
@@ -478,10 +489,15 @@ class RepoMap:
             definers = defines[ident]
             if ident in mentioned_idents:
                 mul = 10
+            elif ident in priority_defines:  # Higher multiplier for priority defines
+                mul = 2
             elif ident.startswith("_"):
                 mul = 0.1
             else:
                 mul = 1
+            
+            if ident not in references:
+                references[ident] = ["self"] 
 
             for referencer, num_refs in Counter(references[ident]).items():
                 for definer in definers:
@@ -543,6 +559,13 @@ class RepoMap:
         fnames_already_included = set(rt[0] for rt in ranked_tags)
 
         top_rank = sorted([(rank, node) for (node, rank) in ranked.items()], reverse=True)
+        
+        
+        with open("top_rank.txt", "w") as f:
+            for rank,node in top_rank:
+                f.write(f"rank: {rank} node: {node}\n")
+                
+        
         for rank, fname in top_rank:
             if fname in rel_other_fnames_without_tags:
                 rel_other_fnames_without_tags.remove(fname)
@@ -551,7 +574,7 @@ class RepoMap:
 
         for fname in rel_other_fnames_without_tags:
             ranked_tags.append((fname,))
-
+            
         return ranked_tags
 
     def get_ranked_tags_map(

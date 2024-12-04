@@ -19,3 +19,5 @@ venv/
 .gitattributes
 captures/
 tokens/
+parse_tree.dot  
+top_rank.txt
